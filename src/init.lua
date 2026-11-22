@@ -1,7 +1,9 @@
 local ffi = require("ffi")
 local jit = require("jit")
+local bit = require("bit")
 
 local native = require("androidapi.ffi")
+local jni = require("androidapi.jni")
 
 local libandroid = native.loadAndroid()
 local liblog = native.loadLog()
@@ -33,6 +35,7 @@ local app = rawApp and ffi.cast("struct androidapi_app*", rawApp) or nil
 
 if app then
 	rawset(jit, "android", true)
+	jni.init(app.activity.vm)
 end
 
 local Constants = {
@@ -60,6 +63,8 @@ local Constants = {
 	},
 	MotionAction = {
 		mask = 0xff,
+		pointerIndexMask = 0xff00,
+		pointerIndexShift = 8,
 		down = 0,
 		up = 1,
 		move = 2,
@@ -69,6 +74,24 @@ local Constants = {
 		pointerUp = 6,
 		hoverMove = 7,
 		scroll = 8,
+		hoverEnter = 9,
+		hoverExit = 10,
+		buttonPress = 11,
+		buttonRelease = 12,
+	},
+	Source = {
+		classPointer = 0x2,
+		touchscreen = 0x1002,
+		mouse = 0x2002,
+		stylus = 0x4002,
+	},
+	ToolType = {
+		unknown = 0,
+		finger = 1,
+		stylus = 2,
+		mouse = 3,
+		eraser = 4,
+		palm = 5,
 	},
 	KeyAction = {
 		down = 0,
@@ -164,6 +187,7 @@ local android = {
 	isTermux = rawget(jit, "android") == true and app == nil,
 	libandroid = libandroid,
 	liblog = liblog,
+	jni = jni,
 	Constants = Constants,
 	POLL_WAKE = -1,
 	POLL_CALLBACK = -2,
@@ -236,17 +260,123 @@ function android.finish()
 	libandroid.ANativeActivity_finish(ffi.cast("void*", app.activity))
 end
 
+--- Show or hide the on-screen keyboard. Its keys arrive as ordinary key events.
+---
+--- This goes through InputMethodManager on the activity's decor view: the NDK's
+--- ANativeActivity_showSoftInput posts to a view that is not focused on most Android
+--- releases, and the keyboard never opens. The NDK call is the fallback if JNI fails.
 ---@param show boolean
 function android.showKeyboard(show)
 	if not app or not libandroid then
 		error("androidapi: not running inside an Android app")
 	end
 
+	local activity = app.activity.clazz
+	local ok = jni.frame(function()
+		local imm = jni.call(activity, "android/content/Context", "getSystemService",
+			"(Ljava/lang/String;)Ljava/lang/Object;", "object", jni.string("input_method"))
+		local window = jni.call(activity, "android/app/Activity", "getWindow", "()Landroid/view/Window;", "object")
+		local view = jni.call(window, "android/view/Window", "getDecorView", "()Landroid/view/View;", "object")
+		if show then
+			jni.call(imm, "android/view/inputmethod/InputMethodManager", "showSoftInput",
+				"(Landroid/view/View;I)Z", "boolean", view, 0)
+		else
+			local token = jni.call(view, "android/view/View", "getWindowToken", "()Landroid/os/IBinder;", "object")
+			jni.call(imm, "android/view/inputmethod/InputMethodManager", "hideSoftInputFromWindow",
+				"(Landroid/os/IBinder;I)Z", "boolean", token, 0)
+		end
+		return true
+	end)
+	if ok then return end
+
 	if show then
 		libandroid.ANativeActivity_showSoftInput(ffi.cast("void*", app.activity), 1)
 	else
 		libandroid.ANativeActivity_hideSoftInput(ffi.cast("void*", app.activity), 1)
 	end
+end
+
+-- KeyCharacterMap.COMBINING_ACCENT: the key starts a dead-key sequence rather than typing.
+local COMBINING_ACCENT = 0x80000000
+
+---@type table<number, ffi.cdata*>
+local keyMaps = {}
+
+--- The character a key types, as a Unicode code point, or nil when it types none (a modifier,
+--- an arrow, a dead key). The NDK has no call for this -- AKeyEvent_getUnicodeChar does not
+--- exist outside Java -- so it asks the device's KeyCharacterMap, which is what
+--- KeyEvent.getUnicodeChar does. Safe to call outside the input callback: it takes the event's
+--- numbers, not the event.
+---@param deviceId number
+---@param keyCode number
+---@param metaState number
+---@return number?
+function android.keyCharacter(deviceId, keyCode, metaState)
+	if not app then return nil end
+
+	local result = jni.frame(function()
+		local map = keyMaps[deviceId]
+		if map == nil then
+			local loaded = jni.callStatic("android/view/KeyCharacterMap", "load",
+				"(I)Landroid/view/KeyCharacterMap;", deviceId)
+			if loaded == nil then return 0 end
+			map = jni.global(loaded)
+			keyMaps[deviceId] = map
+		end
+		return jni.call(map, "android/view/KeyCharacterMap", "get", "(II)I", "int", keyCode, metaState)
+	end)
+
+	local code = tonumber(result) or 0
+	if code == 0 or bit.band(code, COMBINING_ACCENT) ~= 0 then
+		return nil
+	end
+	return code
+end
+
+--- The text on the system clipboard, or nil when it holds none.
+---@return string?
+function android.getClipboardText()
+	if not app then return nil end
+	local activity = app.activity.clazz
+	return (jni.frame(function()
+		local manager = jni.call(activity, "android/content/Context", "getSystemService",
+			"(Ljava/lang/String;)Ljava/lang/Object;", "object", jni.string("clipboard"))
+		local clip = jni.call(manager, "android/content/ClipboardManager", "getPrimaryClip",
+			"()Landroid/content/ClipData;", "object")
+		if clip == nil then return nil end
+		if jni.call(clip, "android/content/ClipData", "getItemCount", "()I", "int") < 1 then return nil end
+		local item = jni.call(clip, "android/content/ClipData", "getItemAt",
+			"(I)Landroid/content/ClipData$Item;", "object", 0)
+		local text = jni.call(item, "android/content/ClipData$Item", "getText",
+			"()Ljava/lang/CharSequence;", "object")
+		if text == nil then return nil end
+		local str = jni.call(text, "java/lang/Object", "toString", "()Ljava/lang/String;", "object")
+		return jni.tostring(str)
+	end))
+end
+
+--- Put text on the system clipboard; nil empties it.
+---@param text string?
+function android.setClipboardText(text)
+	if not app then
+		error("androidapi: not running inside an Android app")
+	end
+	local activity = app.activity.clazz
+	local _, err = jni.frame(function()
+		local manager = jni.call(activity, "android/content/Context", "getSystemService",
+			"(Ljava/lang/String;)Ljava/lang/Object;", "object", jni.string("clipboard"))
+		if text == nil and app.activity.sdkVersion >= 28 then
+			jni.call(manager, "android/content/ClipboardManager", "clearPrimaryClip", "()V", "void")
+			return true
+		end
+		local clip = jni.callStatic("android/content/ClipData", "newPlainText",
+			"(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;",
+			jni.string(""), jni.string(text or ""))
+		jni.call(manager, "android/content/ClipboardManager", "setPrimaryClip",
+			"(Landroid/content/ClipData;)V", "void", clip)
+		return true
+	end)
+	if err then error(err, 2) end
 end
 
 ---@return string? content

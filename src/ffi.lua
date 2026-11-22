@@ -11,17 +11,37 @@ struct androidapi_rect {
 	int32_t bottom;
 };
 
+struct androidapi_jni_env {
+	void **functions;
+};
+
+struct androidapi_java_vm {
+	void **functions;
+};
+
+typedef union {
+	uint8_t z;
+	int8_t b;
+	uint16_t c;
+	int16_t s;
+	int32_t i;
+	int64_t j;
+	float f;
+	double d;
+	void *l;
+} androidapi_jvalue;
+
 struct androidapi_activity {
 	void *callbacks;
-	void *vm;
-	void *env;
+	struct androidapi_java_vm *vm;
+	struct androidapi_jni_env *env;
 	void *clazz;
-	void *activity;
-	void *assetManager;
 	const char *internalDataPath;
 	const char *externalDataPath;
 	int32_t sdkVersion;
 	void *instance;
+	void *assetManager;
+	const char *obbPath;
 };
 
 struct androidapi_poll_source {
@@ -72,17 +92,20 @@ void ANativeActivity_hideSoftInput(void *activity, uint32_t flags);
 
 int32_t AInputEvent_getType(void *event);
 int32_t AInputEvent_getSource(void *event);
+int32_t AInputEvent_getDeviceId(void *event);
 int32_t AMotionEvent_getAction(void *event);
+size_t AMotionEvent_getPointerCount(void *event);
 float AMotionEvent_getX(void *event, size_t pointerIndex);
 float AMotionEvent_getY(void *event, size_t pointerIndex);
+float AMotionEvent_getPressure(void *event, size_t pointerIndex);
 int32_t AMotionEvent_getPointerId(void *event, size_t pointerIndex);
+int32_t AMotionEvent_getToolType(void *event, size_t pointerIndex);
 int32_t AMotionEvent_getButtonState(void *event);
 float AMotionEvent_getAxisValue(void *event, int32_t axis, size_t pointerIndex);
 int32_t AKeyEvent_getAction(void *event);
 int32_t AKeyEvent_getKeyCode(void *event);
 int32_t AKeyEvent_getMetaState(void *event);
 int32_t AKeyEvent_getRepeatCount(void *event);
-int32_t AKeyEvent_getUnicodeChar(void *event);
 
 void *AAssetManager_open(void *manager, const char *filename, int mode);
 int AAsset_read(void *asset, void *buffer, size_t count);

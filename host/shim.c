@@ -20,6 +20,7 @@
 #include "android_native_app_glue.h"
 
 #include <android/log.h>
+#include <jni.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -47,5 +48,14 @@ void android_main(struct android_app* app)
 	}
 
 	lua_close(L);
+
+	/* androidapi attaches this thread to the VM for its JNI calls; ART aborts the
+	 * process if an attached native thread exits, so detach before returning. */
+	JavaVM* vm = app->activity->vm;
+	JNIEnv* env = NULL;
+	if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) == JNI_OK) {
+		(*vm)->DetachCurrentThread(vm);
+	}
+
 	ANativeActivity_finish(app->activity);
 }
