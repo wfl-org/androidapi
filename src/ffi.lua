@@ -84,7 +84,7 @@ struct androidapi_native_window_buffer {
 int32_t ANativeWindow_lock(void *window, struct androidapi_native_window_buffer *outBuffer, void *inOutDirtyBounds);
 int32_t ANativeWindow_unlockAndPost(void *window);
 int32_t ANativeWindow_setBuffersGeometry(void *window, int32_t width, int32_t height, int32_t format);
-
+int32_t ANativeWindow_setFrameRate(void *window, float frameRate, int8_t compatibility);
 
 void ANativeActivity_finish(void *activity);
 void ANativeActivity_showSoftInput(void *activity, uint32_t flags);

@@ -232,6 +232,51 @@ function android.windowSize()
 		tonumber(libandroid.ANativeWindow_getFormat(window)) or 0
 end
 
+---@type number?
+local fastestRate = nil
+
+--- The fastest refresh rate the display has a mode for, in hertz: 90 on a phone whose panel runs
+--- at 60 or 90. What the display is running at now is the system's choice, and it picks the
+--- fastest one only for a window that asks for it -- see `setFrameRate`.
+---@return number?
+function android.maxRefreshRate()
+	if fastestRate ~= nil then return fastestRate end
+	if not app then return nil end
+	local activity = app.activity.clazz
+	local rate = jni.frame(function()
+		local manager = jni.call(activity, "android/app/Activity", "getWindowManager",
+			"()Landroid/view/WindowManager;", "object")
+		local display = jni.call(manager, "android/view/WindowManager", "getDefaultDisplay",
+			"()Landroid/view/Display;", "object")
+		local best = jni.call(display, "android/view/Display", "getRefreshRate", "()F", "float")
+		local modes = jni.call(display, "android/view/Display", "getSupportedModes",
+			"()[Landroid/view/Display$Mode;", "object")
+		if modes ~= nil then
+			for index = 0, jni.arrayLength(modes) - 1 do
+				local mode = jni.arrayElement(modes, index)
+				if mode ~= nil then
+					local hz = jni.call(mode, "android/view/Display$Mode", "getRefreshRate", "()F", "float")
+					if hz > best then best = hz end
+					jni.drop(mode)
+				end
+			end
+		end
+		return best
+	end, 32)
+	fastestRate = tonumber(rate)
+	return fastestRate
+end
+
+--- Asks the display to run at `hz` while this app's window is on screen, or gives the choice back
+--- to the system with 0. Android 11 and later; earlier releases have no call for it and keep
+--- their rate.
+---@param hz number
+function android.setFrameRate(hz)
+	local window = app and app.window or nil
+	if window == nil or not libandroid then return end
+	pcall(function() libandroid.ANativeWindow_setFrameRate(window, hz, 0) end)
+end
+
 --- Run one pass of the Android looper and process the source it returns.
 ---@param timeoutMillis number?
 ---@return number

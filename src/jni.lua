@@ -44,6 +44,8 @@ local slots = {
 	GetStaticObjectField = { slot = 145, type = "void*(*)(void*, void*, void*)" },
 	NewString = { slot = 163, type = "void*(*)(void*, const uint16_t*, int32_t)" },
 	GetStringLength = { slot = 164, type = "int32_t(*)(void*, void*)" },
+	GetArrayLength = { slot = 171, type = "int32_t(*)(void*, void*)" },
+	GetObjectArrayElement = { slot = 173, type = "void*(*)(void*, void*, int32_t)" },
 	NewCharArray = { slot = 177, type = "void*(*)(void*, int32_t)" },
 	NewIntArray = { slot = 179, type = "void*(*)(void*, int32_t)" },
 	NewFloatArray = { slot = 181, type = "void*(*)(void*, int32_t)" },
@@ -380,6 +382,26 @@ function jni.getFloats(array, count, into)
 	jni.env()
 	fn.GetFloatArrayRegion(env, array, 0, count, into)
 	check("GetFloatArrayRegion")
+end
+
+--- How many elements a Java array has.
+---@param array ffi.cdata*
+---@return number
+function jni.arrayLength(array)
+	jni.env()
+	return tonumber(fn.GetArrayLength(env, array)) or 0
+end
+
+--- One element of a Java object array, from nought, as a local reference.
+---@param array ffi.cdata*
+---@param index number
+---@return ffi.cdata*?
+function jni.arrayElement(array, index)
+	jni.env()
+	local element = fn.GetObjectArrayElement(env, array, index)
+	check("GetObjectArrayElement")
+	if element == nil then return nil end
+	return element
 end
 
 --- A global reference to `object`, which outlives the frame it was made in.
