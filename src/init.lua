@@ -264,11 +264,15 @@ function android.finish()
 	libandroid.ANativeActivity_finish(ffi.cast("void*", app.activity))
 end
 
+-- InputMethodManager.SHOW_FORCED: show the keyboard though the view asking is not an editor.
+local SHOW_FORCED = 2
+
 --- Show or hide the on-screen keyboard. Its keys arrive as ordinary key events.
 ---
 --- This goes through InputMethodManager on the activity's decor view: the NDK's
 --- ANativeActivity_showSoftInput posts to a view that is not focused on most Android
---- releases, and the keyboard never opens. The NDK call is the fallback if JNI fails.
+--- releases, and the keyboard never opens. The decor view is not a text editor, so a plain
+--- request is ignored: it is asked for with SHOW_FORCED. The NDK call is the fallback if JNI fails.
 ---@param show boolean
 function android.showKeyboard(show)
 	if not app or not libandroid then
@@ -283,7 +287,7 @@ function android.showKeyboard(show)
 		local view = jni.call(window, "android/view/Window", "getDecorView", "()Landroid/view/View;", "object")
 		if show then
 			jni.call(imm, "android/view/inputmethod/InputMethodManager", "showSoftInput",
-				"(Landroid/view/View;I)Z", "boolean", view, 0)
+				"(Landroid/view/View;I)Z", "boolean", view, SHOW_FORCED)
 		else
 			local token = jni.call(view, "android/view/View", "getWindowToken", "()Landroid/os/IBinder;", "object")
 			jni.call(imm, "android/view/inputmethod/InputMethodManager", "hideSoftInputFromWindow",
