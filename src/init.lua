@@ -15,6 +15,9 @@ end)
 ---@class androidapi.ffi.AssetManager: ffi.cdata*
 ---@class androidapi.ffi.NativeActivity: ffi.cdata*
 ---@field assetManager androidapi.ffi.AssetManager?
+---@field sdkVersion number
+---@field vm ffi.cdata*
+---@field clazz ffi.cdata*
 
 ---@class androidapi.ffi.InputEvent: ffi.cdata*
 
@@ -177,6 +180,7 @@ local logPriority = {
 ---@field isTermux boolean
 ---@field libandroid ffi.namespace*?
 ---@field liblog ffi.namespace*?
+---@field jni androidapi.jni
 ---@field Constants table
 ---@field POLL_WAKE number
 ---@field POLL_CALLBACK number
