@@ -2,7 +2,7 @@
 	"name": "androidapi",
 	"description": "Raw Android NDK bindings for LuaJIT",
 	"authors": ["David Cruz <david@bycruz.dev>"],
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"devDependencies": {
 		"lde-test": { "git": "https://github.com/lde-org/lde" }
 	}
