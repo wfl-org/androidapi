@@ -277,6 +277,14 @@ function android.setFrameRate(hz)
 	pcall(function() libandroid.ANativeWindow_setFrameRate(window, hz, 0) end)
 end
 
+-- This runs on every event-loop pass, so its out-parameters are allocated once here rather
+-- than per call. They are cleared before each poll: the buffer is shared, and a pass that
+-- finds nothing must not see the source the previous pass left in it.
+local pollSource = ffi.new(ffi.typeof("struct androidapi_poll_source*[1]"))
+---@cast pollSource androidapi.ffi.PollSource[]
+local pollSourceOut = ffi.cast("void**", pollSource)
+local pollEvents = ffi.new("int[1]")
+
 --- Run one pass of the Android looper and process the source it returns.
 ---@param timeoutMillis number?
 ---@return number
@@ -285,13 +293,15 @@ function android.pollOnce(timeoutMillis)
 		return android.POLL_ERROR
 	end
 
-	local source = ffi.new("struct androidapi_poll_source*[1]")
-	---@cast source androidapi.ffi.PollSource[]
-	local events = ffi.new("int[1]")
-	local result = libandroid.ALooper_pollOnce(timeoutMillis or 0, nil, events, ffi.cast("void**", source))
+	pollSource[0] = nil
+	pollEvents[0] = 0
+	local result = libandroid.ALooper_pollOnce(timeoutMillis or 0, nil, pollEvents, pollSourceOut)
 
-	if result >= 0 and source[0] ~= nil then
-		source[0].process(app, source[0])
+	if result >= 0 then
+		local source = pollSource[0]
+		if source ~= nil then
+			source.process(app, source)
+		end
 	end
 
 	return tonumber(result) or android.POLL_ERROR
